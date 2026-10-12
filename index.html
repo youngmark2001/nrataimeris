@@ -1,4 +1,8 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="lv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Studijas taimeris</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +20,7 @@
   color-scheme: light;
 }
 html, body { height: 100%; }
-body { background: var(--paper); color: var(--ink); font-family: var(--display); }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--display); }
 
 .stage {
   height: 100%;
@@ -46,6 +50,15 @@ body { background: var(--paper); color: var(--ink); font-family: var(--display);
 }
 .status::before { content: ""; width: 10px; height: 10px; background: var(--mute); }
 .stage[data-state="running"] .status::before { background: var(--red); }
+.top-right { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.vmix {
+  font-weight: 700; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.vmix-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--mute); box-sizing: border-box; }
+.vmix-dot[data-mode="ok"] { border-color: currentColor; background: currentColor; }
+.vmix-dot[data-mode="rec"] { border-color: var(--red); background: var(--red); animation: recblink 1.2s steps(1, end) infinite; }
+@keyframes recblink { 50% { opacity: 0.25; } }
 
 /* Clock */
 .face { display: grid; place-items: center; align-content: center; gap: clamp(4px, 1vh, 12px); min-height: 0; text-align: center; }
@@ -88,6 +101,9 @@ button:disabled { opacity: 0.35; cursor: default; }
   font-variant-numeric: tabular-nums;
 }
 .mins input:disabled { opacity: 0.5; }
+.mins input.addr { width: 9em; text-align: left; font-size: 1rem; font-weight: 700; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
+.check input { width: 18px; height: 18px; accent-color: var(--red); margin: 0; }
 .hint { font-size: 0.78rem; color: var(--mute); font-weight: 500; letter-spacing: 0.02em; }
 
 /* Flashes: whole stage turns red, type turns white */
@@ -111,11 +127,17 @@ button:disabled { opacity: 0.35; cursor: default; }
   .controls .spacer { display: none; }
 }
 </style>
+</head>
+<body>
+
 
 <div class="stage" id="stage" data-state="ready">
   <div class="top">
     <div class="tag"><span class="tag-box" id="tagMins">60</span><span class="tag-word">min</span></div>
-    <div class="status" id="status" aria-live="polite">Gatavs</div>
+    <div class="top-right">
+      <span class="vmix"><span class="vmix-dot" id="vmixDot" data-mode="off"></span><span id="vmixText">vMix: pārbauda…</span></span>
+      <div class="status" id="status" aria-live="polite">Gatavs</div>
+    </div>
   </div>
 
   <div class="face">
@@ -133,6 +155,8 @@ button:disabled { opacity: 0.35; cursor: default; }
     <button class="primary" id="startBtn" type="button">Sākt</button>
     <button id="resetBtn" type="button">Atiestatīt</button>
     <label class="mins" for="minsInput">Ilgums <input id="minsInput" type="number" min="1" max="240" step="1" value="60"> min</label>
+    <label class="mins" for="vmixAddr">vMix <input id="vmixAddr" class="addr" type="text" value="127.0.0.1:8088" spellcheck="false" autocomplete="off"></label>
+    <label class="check" for="vmixAuto"><input id="vmixAuto" type="checkbox" checked> Sākt ar ierakstu</label>
     <span class="spacer"></span>
     <span class="hint">Atstarpe: sākt / pauze · R: atiestatīt · F: pilnekrāns</span>
     <button id="testBtn" type="button">Pārbaudīt mirgošanu</button>
@@ -290,14 +314,77 @@ button:disabled { opacity: 0.35; cursor: default; }
   minsInput.addEventListener("change", () => { if (state === "ready" || state === "over") reset(); });
 
   document.addEventListener("keydown", e => {
-    if (e.target === minsInput || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.tagName === "INPUT" || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.code === "Space") { e.preventDefault(); toggle(); }
     else if (e.key === "r" || e.key === "R") reset();
     else if (e.key === "f" || e.key === "F") fullscreen();
   });
 
+  // vMix: start the countdown when a recording begins (same API the Marker Console reads)
+  const vmixDot = $("vmixDot"), vmixText = $("vmixText"), vmixAddr = $("vmixAddr"), vmixAuto = $("vmixAuto");
+  let vmixWasRec = null, vmixFails = 0, vmixBusy = false;
+  try { const saved = localStorage.getItem("vmixAddr"); if (saved) vmixAddr.value = saved; } catch (e) {}
+  try { if (localStorage.getItem("vmixAuto") === "0") vmixAuto.checked = false; } catch (e) {}
+  vmixAddr.addEventListener("change", () => {
+    vmixAddr.value = vmixAddr.value.trim() || "127.0.0.1:8088";
+    try { localStorage.setItem("vmixAddr", vmixAddr.value); } catch (e) {}
+    vmixWasRec = null;
+  });
+  vmixAuto.addEventListener("change", () => {
+    try { localStorage.setItem("vmixAuto", vmixAuto.checked ? "1" : "0"); } catch (e) {}
+  });
+
+  function vmixUrl() {
+    let a = vmixAddr.value.trim() || "127.0.0.1:8088";
+    if (!/^https?:\/\//i.test(a)) a = "http://" + a;
+    return a.replace(/\/+$/, "") + "/API/";
+  }
+
+  function setVmix(mode, text) { vmixDot.dataset.mode = mode; vmixText.textContent = text; }
+
+  // Start from the full duration, minus however long vMix has already been recording
+  function startFromRecording(seconds) {
+    reset();
+    remaining = Math.max(0, total - seconds * 1000);
+    WARNINGS.forEach(w => { if (w.at >= remaining) fired.add(w.at); });
+    if (remaining <= 0) { finish(); return; }
+    render();
+    start();
+  }
+
+  async function pollVmix() {
+    if (vmixBusy) return;
+    vmixBusy = true;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 1500);
+      const res = await fetch(vmixUrl(), { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) throw new Error("bad status");
+      const doc = new DOMParser().parseFromString(await res.text(), "text/xml");
+      const rec = doc.querySelector("recording");
+      if (!rec) throw new Error("no recording node");
+      const isRec = (rec.textContent || "").trim().toLowerCase() === "true";
+      const seconds = parseInt(rec.getAttribute("duration") || "0", 10) || 0;
+      vmixFails = 0;
+      setVmix(isRec ? "rec" : "ok", isRec ? "vMix: ieraksts" : "vMix: savienots");
+      if (vmixAuto.checked && isRec) {
+        const began = vmixWasRec === false;                       // recording just started
+        const joinedLate = vmixWasRec === null && state === "ready"; // page opened mid-recording
+        if (began || joinedLate) startFromRecording(seconds);
+      }
+      vmixWasRec = isRec;
+    } catch (e) {
+      if (++vmixFails >= 3) { setVmix("off", "vMix: nav savienojuma"); vmixWasRec = null; }
+    } finally {
+      vmixBusy = false;
+    }
+  }
+
   reset();
+  pollVmix();
+  setInterval(pollVmix, 500);
 })();
 </script>
-
-</body></html>
+</body>
+</html>
