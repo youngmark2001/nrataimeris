@@ -1,0 +1,303 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Studijas taimeris</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&display=swap">
+<style>
+/* Layout: one full-screen stage. Minutes tag + status on top, giant clock centred, red rail counting down, quiet control bar below. Deliberately single (white) theme. */
+:root {
+  --paper: #ffffff;
+  --ink: #151313;
+  --red: #e2231a;
+  --red-deep: #b5170f;
+  --mute: #8c8382;
+  --rule: #efe9e8;
+  --display: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+html, body { height: 100%; }
+body { background: var(--paper); color: var(--ink); font-family: var(--display); }
+
+.stage {
+  height: 100%;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: clamp(12px, 2.5vh, 28px);
+  padding-inline: clamp(16px, 4vw, 56px);
+  padding-block: clamp(16px, 3vh, 36px);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* Top bar */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.tag { display: flex; align-items: center; gap: 10px; font-weight: 900; letter-spacing: -0.02em; }
+.tag-box {
+  background: var(--red); color: var(--paper);
+  font-size: clamp(1.4rem, 2.6vw, 2.2rem); line-height: 1;
+  padding: 0.18em 0.22em 0.2em; min-width: 1.3em; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tag-word { font-size: clamp(1.4rem, 2.6vw, 2.2rem); line-height: 1; }
+.status {
+  font-weight: 700; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.status::before { content: ""; width: 10px; height: 10px; background: var(--mute); }
+.stage[data-state="running"] .status::before { background: var(--red); }
+
+/* Clock */
+.face { display: grid; place-items: center; align-content: center; gap: clamp(4px, 1vh, 12px); min-height: 0; text-align: center; }
+.caption {
+  font-weight: 700; font-size: clamp(1rem, 2.6vw, 2rem); letter-spacing: 0.04em; text-transform: uppercase;
+  min-height: 1.3em; color: var(--red);
+}
+.clock {
+  font-weight: 900; letter-spacing: -0.045em; line-height: 0.85;
+  font-size: clamp(5.5rem, 27vw, 34rem);
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.over {
+  font-weight: 900; letter-spacing: -0.035em; line-height: 0.92;
+  font-size: clamp(3.4rem, 12vw, 15rem); text-wrap: balance;
+}
+
+/* Progress rail */
+.rail { height: clamp(8px, 1.4vh, 14px); background: var(--rule); position: relative; overflow: hidden; }
+.fill { position: absolute; inset: 0 auto 0 0; width: 100%; background: var(--red); }
+.marks { position: absolute; inset: 0; pointer-events: none; }
+.marks span { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--paper); }
+
+/* Controls */
+.controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.controls .spacer { flex: 1; }
+button, .mins {
+  font: 700 1rem/1 var(--display); color: inherit; background: transparent;
+  border: 2px solid currentColor; padding: 0.7em 1.1em; cursor: pointer;
+}
+button.primary { background: var(--red); border-color: var(--red); color: var(--paper); min-width: 8.5em; }
+button.primary:hover { background: var(--red-deep); border-color: var(--red-deep); }
+button:not(.primary):hover { color: var(--red); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+button:disabled { opacity: 0.35; cursor: default; }
+.mins { display: inline-flex; align-items: center; gap: 8px; cursor: default; padding-block: 0.45em; }
+.mins input {
+  width: 3.2em; font: 900 1.15rem/1 var(--display); color: inherit; background: transparent;
+  border: 0; border-bottom: 2px solid var(--red); text-align: right; padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+.mins input:disabled { opacity: 0.5; }
+.hint { font-size: 0.78rem; color: var(--mute); font-weight: 500; letter-spacing: 0.02em; }
+
+/* Flashes: whole stage turns red, type turns white */
+@keyframes flash {
+  0%   { background: var(--paper); color: var(--ink); }
+  12%  { background: var(--red);   color: var(--paper); }
+  62%  { background: var(--red);   color: var(--paper); }
+  76%  { background: var(--paper); color: var(--ink); }
+  100% { background: var(--paper); color: var(--ink); }
+}
+.stage.flash { animation: flash 0.9s ease-out var(--flashes, 1); }
+.stage.flash .caption,
+.stage.ended .caption { color: inherit; }
+.stage.ended { animation: flash 1s steps(1, end) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .stage.flash { animation-timing-function: steps(1, end); }
+}
+
+@media (max-width: 560px) {
+  .hint { display: none; }
+  .controls .spacer { display: none; }
+}
+</style>
+
+<div class="stage" id="stage" data-state="ready">
+  <div class="top">
+    <div class="tag"><span class="tag-box" id="tagMins">60</span><span class="tag-word">min</span></div>
+    <div class="status" id="status" aria-live="polite">Gatavs</div>
+  </div>
+
+  <div class="face">
+    <div class="caption" id="caption" aria-live="assertive"></div>
+    <div class="clock" id="clock">60:00</div>
+    <div class="over" id="over" hidden>Laiks beidzies</div>
+  </div>
+
+  <div class="rail" aria-hidden="true">
+    <div class="fill" id="fill"></div>
+    <div class="marks" id="marks"></div>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="startBtn" type="button">Sākt</button>
+    <button id="resetBtn" type="button">Atiestatīt</button>
+    <label class="mins" for="minsInput">Ilgums <input id="minsInput" type="number" min="1" max="240" step="1" value="60"> min</label>
+    <span class="spacer"></span>
+    <span class="hint">Atstarpe: sākt / pauze · R: atiestatīt · F: pilnekrāns</span>
+    <button id="testBtn" type="button">Pārbaudīt mirgošanu</button>
+    <button id="fsBtn" type="button">Pilnekrāns</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const stage = $("stage"), clock = $("clock"), over = $("over"), caption = $("caption"),
+        statusEl = $("status"), fill = $("fill"), marksEl = $("marks"), tagMins = $("tagMins"),
+        startBtn = $("startBtn"), resetBtn = $("resetBtn"), minsInput = $("minsInput"),
+        testBtn = $("testBtn"), fsBtn = $("fsBtn");
+
+  // Warnings: remaining time (ms), how many flashes, caption shown
+  const WARNINGS = [
+    { at: 10 * 60e3, times: 1, text: "Atlikušas 10 minūtes" },
+    { at: 5 * 60e3,  times: 1, text: "Atlikušas 5 minūtes" },
+    { at: 60e3,      times: 2, text: "Atlikusi 1 minūte" },
+    { at: 30e3,      times: 2, text: "Atlikušas 30 sekundes" },
+  ];
+
+  let total = 60 * 60e3, remaining = total, endAt = null, timer = null,
+      state = "ready", fired = new Set(), captionTimer = null, wakeLock = null;
+
+  function fmt(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const m = Math.floor(s / 60), ss = s % 60;
+    return String(m).padStart(2, "0") + ":" + String(ss).padStart(2, "0");
+  }
+
+  function render() {
+    clock.textContent = fmt(remaining);
+    fill.style.width = (Math.max(0, remaining) / total * 100) + "%";
+    document.title = state === "running" ? fmt(remaining) + " · Studijas taimeris" : "Studijas taimeris";
+  }
+
+  function drawMarks() {
+    marksEl.innerHTML = "";
+    WARNINGS.forEach(w => {
+      if (w.at >= total) return;
+      const s = document.createElement("span");
+      s.style.left = (w.at / total * 100) + "%";
+      marksEl.appendChild(s);
+    });
+  }
+
+  function setState(next) {
+    state = next;
+    stage.dataset.state = next;
+    statusEl.textContent = { ready: "Gatavs", running: "Iet", paused: "Pauze", over: "Laiks beidzies" }[next];
+    startBtn.textContent = next === "running" ? "Pauze" : next === "paused" ? "Turpināt" : "Sākt";
+    startBtn.disabled = next === "over";
+    minsInput.disabled = next === "running" || next === "paused";
+  }
+
+  function flash(times, text) {
+    stage.classList.remove("flash");
+    void stage.offsetWidth; // restart the animation
+    stage.style.setProperty("--flashes", times);
+    stage.classList.add("flash");
+    caption.textContent = text || "";
+    clearTimeout(captionTimer);
+    captionTimer = setTimeout(() => { if (state !== "over") caption.textContent = ""; }, 8000);
+  }
+  stage.addEventListener("animationend", () => stage.classList.remove("flash"));
+
+  function tick() {
+    const prev = remaining;
+    remaining = endAt - performance.now();
+    for (const w of WARNINGS) {
+      if (!fired.has(w.at) && prev > w.at && remaining <= w.at) {
+        fired.add(w.at);
+        flash(w.times, w.text);
+      }
+    }
+    if (remaining <= 0) { finish(); return; }
+    render();
+  }
+
+  function finish() {
+    clearInterval(timer); timer = null;
+    remaining = 0;
+    render();
+    clock.hidden = true;
+    over.hidden = false;
+    caption.textContent = "";
+    stage.classList.remove("flash");
+    stage.classList.add("ended");
+    setState("over");
+    releaseWake();
+  }
+
+  function start() {
+    endAt = performance.now() + remaining;
+    timer = setInterval(tick, 100);
+    setState("running");
+    requestWake();
+  }
+
+  function pause() {
+    remaining = endAt - performance.now();
+    clearInterval(timer); timer = null;
+    setState("paused");
+    render();
+    releaseWake();
+  }
+
+  function reset() {
+    clearInterval(timer); timer = null;
+    const mins = Math.min(240, Math.max(1, Math.round(Number(minsInput.value) || 60)));
+    minsInput.value = mins;
+    total = mins * 60e3;
+    remaining = total;
+    fired = new Set();
+    tagMins.textContent = mins;
+    clock.hidden = false;
+    over.hidden = true;
+    caption.textContent = "";
+    stage.classList.remove("flash", "ended");
+    setState("ready");
+    drawMarks();
+    render();
+    releaseWake();
+  }
+
+  function toggle() {
+    if (state === "running") pause();
+    else if (state === "ready" || state === "paused") start();
+  }
+
+  async function requestWake() {
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) { wakeLock = null; }
+  }
+  function releaseWake() {
+    try { wakeLock?.release(); } catch (e) {}
+    wakeLock = null;
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && state === "running") requestWake();
+  });
+
+  function fullscreen() {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      else document.documentElement.requestFullscreen?.().catch(() => {});
+    } catch (e) {}
+  }
+
+  startBtn.addEventListener("click", toggle);
+  resetBtn.addEventListener("click", reset);
+  fsBtn.addEventListener("click", fullscreen);
+  testBtn.addEventListener("click", () => flash(2, "Pārbaude"));
+  minsInput.addEventListener("change", () => { if (state === "ready" || state === "over") reset(); });
+
+  document.addEventListener("keydown", e => {
+    if (e.target === minsInput || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === "Space") { e.preventDefault(); toggle(); }
+    else if (e.key === "r" || e.key === "R") reset();
+    else if (e.key === "f" || e.key === "F") fullscreen();
+  });
+
+  reset();
+})();
+</script>
+
+</body></html>
